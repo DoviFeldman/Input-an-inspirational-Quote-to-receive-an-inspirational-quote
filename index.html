@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Input an inspirational quote to get an insertional quote</title>
+  <!-- Tailwind via CDN for quick GitHub Pages setup -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <meta name="description" content="Upload an inspirational quote to get an insertional quote. Anonymous, simple, pretty UI. Uses Beeceptor to log quotes.">
+  <style>
+    /* Subtle animated gradient background */
+    :root { --bg1: #0f172a; --bg2: #1f2937; --accent: #22d3ee; }
+    body { min-height: 100vh; background: radial-gradient(1200px 600px at 20% 10%, #111827, transparent),
+                                   radial-gradient(1000px 800px at 80% 20%, #0b1324, transparent),
+                                   linear-gradient(160deg, var(--bg1), var(--bg2)); }
+    .glow { box-shadow: 0 0 60px rgba(34, 211, 238, 0.08), 0 0 120px rgba(34, 211, 238, 0.06); }
+    .card { background: rgba(255,255,255,0.04); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.08); }
+    .fade-in { animation: fadeIn 400ms ease-out both; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body class="text-slate-100">
+  <main class="max-w-3xl mx-auto px-6 py-16 md:py-24">
+    <header class="text-center mb-10 fade-in">
+      <h1 class="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight">Input an inspirational quote to get an insertional quote</h1>
+      <p class="mt-3 text-slate-300">Type your quote, press <kbd class="px-1.5 py-0.5 rounded bg-slate-700/60 border border-slate-600 text-slate-200">Enter</kbd>, and you'll see the previous user's quote.</p>
+    </header>
+
+    <!-- Input Card -->
+    <section id="input-card" class="card rounded-2xl p-6 md:p-8 glow fade-in">
+      <label for="quote-input" class="block text-sm uppercase tracking-wider text-slate-300 mb-2">Your inspirational quote</label>
+      <div class="relative">
+        <textarea id="quote-input" rows="3" maxlength="320"
+          class="w-full p-4 pr-24 rounded-xl bg-slate-900/60 border border-slate-700 focus:border-cyan-400/70 focus:ring-2 focus:ring-cyan-400/30 outline-none text-lg placeholder-slate-500"
+          placeholder="" autofocus></textarea>
+        <button id="submit-btn" title="Send" class="absolute right-2 bottom-2 md:right-3 md:bottom-3 px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 active:translate-y-px font-semibold text-slate-900">Enter</button>
+      </div>
+      <div class="mt-3 flex justify-between text-xs text-slate-400">
+        <span id="status-msg">Ready</span>
+        <span><span id="char-count">0</span>/320</span>
+      </div>
+      <details class="mt-4 text-slate-400/90 select-text">
+        <summary class="cursor-pointer">What happens when you press Enter?</summary>
+        <ul class="list-disc ml-6 mt-2 space-y-1 text-sm">
+          <li>Your quote is sent (as JSON) to a Beeceptor endpoint you configure below.</li>
+          <li>Immediately after send, this page hides the input and shows the last known quote from our public mirror.</li>
+          <li>Nightly, a GitHub Action (in your repo) can archive all quotes to a private repo.</li>
+        </ul>
+      </details>
+    </section>
+
+    <!-- Result Card -->
+    <section id="result-card" class="hidden card rounded-2xl p-8 md:p-10 mt-10 glow fade-in">
+      <h2 class="text-xl font-bold mb-2">Insertional quote (last user's)</h2>
+      <blockquote id="previous-quote" class="text-2xl leading-relaxed font-semibold text-slate-100"></blockquote>
+      <p id="result-meta" class="mt-4 text-sm text-slate-400"></p>
+      <div class="mt-6 flex flex-wrap gap-3">
+        <button id="again-btn" class="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700">Post another</button>
+        <a id="mirror-link" href="#" target="_blank" rel="noopener" class="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700">View mirror JSON</a>
+      </div>
+    </section>
+
+    <!-- Footer / Setup tips -->
+    <footer class="mt-16 text-center text-slate-400 text-sm">
+      <p class="mt-2">Configure <code>BEECEPTOR_ENDPOINT</code> (write-only) and optional <code>LAST_QUOTE_URL</code> (read-only mirror) below.</p>
+    </footer>
+  </main>
+
+  <script>
+    // =====================
+    // CONFIGURE THESE
+    // =====================
+
+    // 1) Beeceptor endpoint (write-only). Create an endpoint and replace below:
+    //    Example: https://your-endpoint-name.beeceptor.com/quotes
+    const BEECEPTOR_ENDPOINT = 'https://REPLACE-ME.beeceptor.com/quotes';
+
+    // 2) Optional read-only mirror JSON (public). If you set this to a valid URL
+    //    (e.g., a small JSON file updated by GitHub Actions), the page will show
+    //    the truly-last-known quote from other users. If left null, we'll fallback
+    //    to localStorage, then to the default quote.
+    const LAST_QUOTE_URL = null; // e.g., 'https://your-user.github.io/quotes-mirror/latest.json'
+
+    // 3) Alternative: RequestBin (capture-only). Uncomment to POST there instead of Beeceptor.
+    // const REQUESTBIN_ENDPOINT = 'https://YOUR-ID.requestbin.net';
+
+    // =====================
+    // UI Logic
+    // =====================
+    const qs = sel => document.querySelector(sel);
+    const inputCard = qs('#input-card');
+    const resultCard = qs('#result-card');
+    const textarea = qs('#quote-input');
+    const submitBtn = qs('#submit-btn');
+    const againBtn = qs('#again-btn');
+    const prevQuoteEl = qs('#previous-quote');
+    const resultMeta = qs('#result-meta');
+    const statusMsg = qs('#status-msg');
+    const charCount = qs('#char-count');
+    const mirrorLink = qs('#mirror-link');
+
+    let lastKnownQuote = {
+      quote: 'Go down with the ship!',
+      ts: new Date(0).toISOString()
+    };
+
+    // Load last-known quote from mirror JSON if configured
+    async function loadMirror() {
+      if (!LAST_QUOTE_URL) {
+        const local = localStorage.getItem('lastKnownQuote');
+        if (local) {
+          try { lastKnownQuote = JSON.parse(local); } catch {}
+        }
+        mirrorLink.classList.add('hidden');
+        return;
+      }
+      mirrorLink.href = LAST_QUOTE_URL;
+      try {
+        const res = await fetch(LAST_QUOTE_URL, { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && typeof data.quote === 'string') {
+            lastKnownQuote = data;
+            localStorage.setItem('lastKnownQuote', JSON.stringify(lastKnownQuote));
+          }
+        }
+      } catch (e) {
+        console.warn('Mirror fetch failed, falling back to default/local.', e);
+        const local = localStorage.getItem('lastKnownQuote');
+        if (local) {
+          try { lastKnownQuote = JSON.parse(local); } catch {}
+        }
+      }
+    }
+
+    function showResultCard() {
+      inputCard.classList.add('hidden');
+      resultCard.classList.remove('hidden');
+      prevQuoteEl.textContent = lastKnownQuote.quote || 'Go down with the ship!';
+      const t = new Date(lastKnownQuote.ts || Date.now());
+      resultMeta.textContent = `Previous quote timestamp: ${t.toLocaleString()}`;
+    }
+
+    function resetForm() {
+      resultCard.classList.add('hidden');
+      inputCard.classList.remove('hidden');
+      textarea.value = '';
+      charCount.textContent = '0';
+      textarea.focus();
+    }
+
+    textarea.addEventListener('input', () => {
+      charCount.textContent = String(textarea.value.length);
+    });
+
+    async function sendQuote() {
+      const quote = textarea.value.trim();
+      if (!quote) { statusMsg.textContent = 'Please enter a quote.'; return; }
+
+      // Immediately show the last known quote (which is from before this submission)
+      showResultCard();
+
+      statusMsg.textContent = 'Sending…';
+      const payload = { quote, ts: new Date().toISOString(), ua: navigator.userAgent };
+
+      try {
+        const res = await fetch(BEECEPTOR_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        statusMsg.textContent = 'Sent to Beeceptor ✅';
+      } catch (err) {
+        console.error(err);
+        statusMsg.textContent = 'Send failed (check endpoint).';
+      }
+
+      // Update local idea of lastKnownQuote to this submission (so next local user sees it)
+      try {
+        localStorage.setItem('lastKnownQuote', JSON.stringify(payload));
+      } catch {}
+    }
+
+    submitBtn.addEventListener('click', sendQuote);
+    textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuote(); }
+    });
+    againBtn.addEventListener('click', resetForm);
+
+    // Kick things off
+    loadMirror();
+  </script>
+</body>
+</html>
