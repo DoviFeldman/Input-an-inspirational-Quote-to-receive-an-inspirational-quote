@@ -1,0 +1,1 @@
+# Input-an-inspirational-Quote-to-receive-an-inspirational-quote
